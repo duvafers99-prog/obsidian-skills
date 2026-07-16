@@ -1,0 +1,375 @@
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<meta name="theme-color" content="#0f1420">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<title>Líneas · juego zen</title>
+<style>
+  :root{
+    --bg:#0f1420; --panel:#161d2e; --ink:#e8edf7; --muted:#8b97b0;
+    --line:#243049; --accent:#4d8dff;
+  }
+  *{box-sizing:border-box; -webkit-tap-highlight-color:transparent}
+  html,body{margin:0;height:100%}
+  body{
+    background:radial-gradient(1200px 700px at 50% -10%, #1b2440 0%, var(--bg) 55%);
+    color:var(--ink); font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+    display:flex; flex-direction:column; align-items:center;
+    min-height:100%; overflow:hidden; touch-action:none;
+    padding:max(10px,env(safe-area-inset-top)) 12px max(10px,env(safe-area-inset-bottom));
+  }
+  header{width:100%;max-width:520px;display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:8px}
+  .title{font-weight:700;font-size:19px;letter-spacing:.3px;display:flex;align-items:center;gap:8px}
+  .title small{font-weight:500;color:var(--muted);font-size:12px}
+  .stats{display:flex;gap:8px}
+  .chip{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:6px 11px;font-size:12px;line-height:1.1;text-align:center;min-width:58px}
+  .chip b{display:block;font-size:16px;font-weight:700;margin-top:2px}
+  .chip span{color:var(--muted)}
+  .board-wrap{position:relative;width:100%;max-width:520px;aspect-ratio:1/1}
+  canvas{width:100%;height:100%;display:block;border-radius:20px;background:var(--panel);
+    border:1px solid var(--line);box-shadow:0 12px 40px rgba(0,0,0,.35), inset 0 1px 0 rgba(255,255,255,.03);touch-action:none}
+  .toolbar{width:100%;max-width:520px;display:flex;gap:10px;margin-top:12px}
+  button{flex:1;font:inherit;font-weight:600;font-size:15px;color:var(--ink);background:var(--panel);
+    border:1px solid var(--line);border-radius:14px;padding:13px 10px;cursor:pointer;transition:transform .06s ease,background .15s}
+  button:active{transform:translateY(1px);background:#1d2740}
+  button.primary{background:linear-gradient(180deg,#5a97ff,#3f7ef0);border-color:transparent;color:#fff;box-shadow:0 6px 18px rgba(77,141,255,.35)}
+  .hint{color:var(--muted);font-size:12.5px;margin-top:10px;text-align:center;max-width:520px;line-height:1.4}
+  .win{position:absolute;inset:0;display:none;align-items:center;justify-content:center;flex-direction:column;
+    background:rgba(15,20,32,.72);backdrop-filter:blur(6px);border-radius:20px;text-align:center;padding:20px;gap:6px}
+  .win.show{display:flex;animation:pop .35s ease}
+  .win h2{margin:0;font-size:30px}
+  .win p{margin:2px 0 14px;color:var(--muted)}
+  .win button{background:linear-gradient(180deg,#5a97ff,#3f7ef0);border-color:transparent;color:#fff;padding:13px 26px;flex:0}
+  @keyframes pop{from{transform:scale(.9);opacity:0}to{transform:scale(1);opacity:1}}
+</style>
+
+<header>
+  <div class="title">🧵 Líneas <small id="lvlLabel">Nivel 1</small></div>
+  <div class="stats">
+    <div class="chip"><span>Unidos</span><b id="pipes">0/0</b></div>
+    <div class="chip"><span>Movs</span><b id="moves">0</b></div>
+  </div>
+</header>
+
+<div class="board-wrap">
+  <canvas id="board"></canvas>
+  <div class="win" id="win">
+    <h2>✨ ¡Nivel completo!</h2>
+    <p id="winSub">Tablero lleno</p>
+    <button id="nextBtn">Siguiente nivel ›</button>
+  </div>
+</div>
+
+<div class="toolbar">
+  <button id="undoBtn">↺ Deshacer color</button>
+  <button id="resetBtn">Reiniciar</button>
+  <button class="primary" id="newBtn">Nuevo nivel</button>
+</div>
+
+<p class="hint">Arrastra el dedo desde un punto para trazar una línea hasta el punto del mismo color. Une <b>todas las parejas</b> y <b>llena el tablero entero</b> sin cruzar líneas. Cada nivel crece un poco más.</p>
+
+<script>
+(() => {
+  const COLORS = ["#ff5a5a","#4d8dff","#3ddc84","#ffd23f","#ff9f43","#b06dff","#22d3ee","#ff6bcb","#a3e635","#f472b6"];
+  const cv = document.getElementById('board');
+  const ctx = cv.getContext('2d');
+  const el = id => document.getElementById(id);
+
+  let level = +(localStorage.getItem('lineas.level')||1);
+  let best = +(localStorage.getItem('lineas.best')||0);
+  let R, C, owner, endpoints, paths, colorCount, moves;
+  let drawing = null; // {color, cells:[[r,c]...], fromEndIdx}
+  let DPR = Math.min(window.devicePixelRatio||1, 3);
+  let cell = 0, pad = 0;
+
+  // ---------- level config: grows with level ----------
+  function levelConfig(n){
+    const size = Math.min(5 + Math.floor((n-1)/2), 10);   // 5..10
+    const colors = Math.min(4 + Math.floor((n-1)/1.6), size+2, COLORS.length);
+    return {rows:size, cols:size, colors:Math.max(4,Math.round(colors))};
+  }
+
+  // ---------- Hamiltonian path via Warnsdorff + backtracking ----------
+  function neighbors(r,c){
+    const o=[]; if(r>0)o.push([r-1,c]); if(r<R-1)o.push([r+1,c]); if(c>0)o.push([r,c-1]); if(c<C-1)o.push([r,c+1]);
+    return o;
+  }
+  function shuffle(a){for(let i=a.length-1;i>0;i--){const j=Math.floor(Math.random()*(i+1));[a[i],a[j]]=[a[j],a[i]];}return a;}
+
+  function hamiltonian(){
+    const total=R*C;
+    for(let attempt=0; attempt<40; attempt++){
+      const vis=Array.from({length:R},()=>Array(C).fill(false));
+      const path=[];
+      const sr=Math.floor(Math.random()*R), sc=Math.floor(Math.random()*C);
+      let steps=0; const budget=total*total*8;
+      const dfs=(r,c)=>{
+        if(++steps>budget) return false;
+        vis[r][c]=true; path.push([r,c]);
+        if(path.length===total) return true;
+        // Warnsdorff: order unvisited neighbors by their unvisited-degree
+        let opts=neighbors(r,c).filter(([a,b])=>!vis[a][b]);
+        opts=opts.map(([a,b])=>{
+          let d=0; for(const [x,y] of neighbors(a,b)) if(!vis[x][y]) d++;
+          return {a,b,d,k:Math.random()};
+        }).sort((p,q)=> p.d-q.d || p.k-q.k);
+        for(const o of opts){ if(dfs(o.a,o.b)) return true; }
+        vis[r][c]=false; path.pop(); return false;
+      };
+      if(dfs(sr,sc)) return path;
+    }
+    // fallback: boustrophedon
+    const p=[]; for(let r=0;r<R;r++){ if(r%2===0){for(let c=0;c<C;c++)p.push([r,c]);} else {for(let c=C-1;c>=0;c--)p.push([r,c]);} }
+    return p;
+  }
+
+  // ---------- generate a solvable puzzle ----------
+  function generate(){
+    const cfg=levelConfig(level);
+    R=cfg.rows; C=cfg.cols; colorCount=cfg.colors;
+    const total=R*C;
+    let segs=null;
+    for(let tries=0; tries<60 && !segs; tries++){
+      const path=hamiltonian();
+      // cut into colorCount contiguous segments, each length>=2
+      const k=colorCount;
+      if(total < k*2) continue;
+      const cutSet=new Set();
+      let ok=true, guard=0;
+      while(cutSet.size < k-1 && guard++<500){
+        cutSet.add(1+Math.floor(Math.random()*(total-1)));
+      }
+      const cuts=[0,...[...cutSet].sort((a,b)=>a-b),total];
+      const s=[];
+      for(let i=0;i<cuts.length-1;i++){
+        const seg=path.slice(cuts[i],cuts[i+1]);
+        if(seg.length<2){ok=false;break;}
+        s.push(seg);
+      }
+      if(ok && s.length===k) segs=s;
+    }
+    if(!segs){ // ultra fallback: split boustrophedon evenly
+      const path=hamiltonian(); segs=[]; const per=Math.floor(total/colorCount); let i=0;
+      for(let c=0;c<colorCount;c++){ const end=(c===colorCount-1)?total:(i+per); segs.push(path.slice(i,end)); i=end; }
+    }
+
+    owner=Array.from({length:R},()=>Array(C).fill(-1));
+    endpoints=[]; paths=[]; moves=0;
+    segs.forEach((seg,ci)=>{
+      const a=seg[0], b=seg[seg.length-1];
+      endpoints.push([a,b]);
+      owner[a[0]][a[1]]=ci; owner[b[0]][b[1]]=ci;
+      paths[ci]=[]; // player starts empty
+    });
+    // mark endpoint cells as owned but not filled-path
+    el('lvlLabel').textContent='Nivel '+level;
+    el('win').classList.remove('show');
+    layout(); render(); updateHUD();
+  }
+
+  // ---------- layout / sizing ----------
+  function layout(){
+    const rect=cv.getBoundingClientRect();
+    const px=Math.round(rect.width*DPR);
+    cv.width=px; cv.height=px;
+    pad=Math.round(px*0.045);
+    cell=(px-pad*2)/C; // square cells assuming R==C
+  }
+  window.addEventListener('resize',()=>{layout();render();});
+
+  function cellCenter(r,c){ return [pad+c*cell+cell/2, pad+r*cell+cell/2]; }
+  function cellAt(x,y){
+    const c=Math.floor((x-pad)/cell), r=Math.floor((y-pad)/cell);
+    if(r<0||c<0||r>=R||c>=C) return null; return [r,c];
+  }
+  function isEndpoint(r,c){ const o=owner[r][c]; if(o<0) return false;
+    return endpoints[o].some(([a,b])=>a===r&&b===c); }
+
+  // ---------- rendering ----------
+  function roundRect(x,y,w,h,rr){ctx.beginPath();ctx.moveTo(x+rr,y);ctx.arcTo(x+w,y,x+w,y+h,rr);ctx.arcTo(x+w,y+h,x,y+h,rr);ctx.arcTo(x,y+h,x,y,rr);ctx.arcTo(x,y,x+w,y,rr);ctx.closePath();}
+
+  function render(){
+    const px=cv.width; ctx.clearRect(0,0,px,px);
+    // grid
+    ctx.strokeStyle='rgba(255,255,255,.05)'; ctx.lineWidth=Math.max(1,DPR);
+    for(let i=0;i<=C;i++){const x=pad+i*cell; ctx.beginPath();ctx.moveTo(x,pad);ctx.lineTo(x,pad+R*cell);ctx.stroke();}
+    for(let i=0;i<=R;i++){const y=pad+i*cell; ctx.beginPath();ctx.moveTo(pad,y);ctx.lineTo(pad+C*cell,y);ctx.stroke();}
+
+    // filled cell tint (subtle)
+    for(let r=0;r<R;r++)for(let c=0;c<C;c++){
+      const o=owner[r][c];
+      if(o>=0 && pathContains(o,r,c) && !isEndpoint(r,c)){
+        ctx.fillStyle=hexA(COLORS[o],.14);
+        const [cx,cy]=cellCenter(r,c);
+        roundRect(cx-cell/2+2,cy-cell/2+2,cell-4,cell-4,cell*0.16); ctx.fill();
+      }
+    }
+
+    // paths
+    const lw=cell*0.34;
+    paths.forEach((p,ci)=>{
+      if(!p||p.length===0) return;
+      ctx.strokeStyle=COLORS[ci]; ctx.lineWidth=lw; ctx.lineCap='round'; ctx.lineJoin='round';
+      ctx.beginPath();
+      // include the connecting endpoint at the start
+      const startEP = nearestEndpointFor(ci,p[0]);
+      let pts=p.slice();
+      if(startEP) pts=[startEP,...pts];
+      // close the line into the far endpoint when the head reaches it
+      const other = startEP ? endpoints[ci].find(([a,b])=>!(a===startEP[0]&&b===startEP[1])) : null;
+      const last=p[p.length-1];
+      if(other && Math.abs(last[0]-other[0])+Math.abs(last[1]-other[1])===1) pts.push(other);
+      pts.forEach(([r,c],i)=>{const [x,y]=cellCenter(r,c); i?ctx.lineTo(x,y):ctx.moveTo(x,y);});
+      ctx.stroke();
+    });
+
+    // endpoints (dots) on top
+    for(let ci=0; ci<endpoints.length; ci++){
+      for(const [r,c] of endpoints[ci]){
+        const [x,y]=cellCenter(r,c);
+        ctx.beginPath(); ctx.fillStyle=COLORS[ci];
+        ctx.arc(x,y,cell*0.30,0,7); ctx.fill();
+        ctx.beginPath(); ctx.fillStyle='rgba(0,0,0,.18)'; ctx.arc(x,y,cell*0.30,0,7);
+        ctx.lineWidth=cell*0.06; ctx.strokeStyle='rgba(255,255,255,.25)'; ctx.stroke();
+      }
+    }
+    // active head glow
+    if(drawing && drawing.cells.length){
+      const [r,c]=drawing.cells[drawing.cells.length-1];
+      const [x,y]=cellCenter(r,c);
+      ctx.beginPath(); ctx.arc(x,y,cell*0.2,0,7); ctx.fillStyle=hexA(COLORS[drawing.color],.5); ctx.fill();
+    }
+  }
+  function pathContains(ci,r,c){ const p=paths[ci]; return p&&p.some(([a,b])=>a===r&&b===c); }
+  function nearestEndpointFor(ci,cellRC){
+    // the endpoint from which this path was started
+    if(drawing && drawing.color===ci) return drawing.startEP;
+    return startEPs[ci]||null;
+  }
+  function hexA(hex,a){const n=parseInt(hex.slice(1),16);return `rgba(${n>>16&255},${n>>8&255},${n&255},${a})`;}
+
+  let startEPs=[]; // remember which endpoint each committed path started from
+
+  // ---------- interaction ----------
+  function pos(e){const r=cv.getBoundingClientRect(); const t=e.touches?e.touches[0]:e; return [(t.clientX-r.left)*DPR,(t.clientY-r.top)*DPR];}
+
+  function startAt(x,y){
+    const rc=cellAt(x,y); if(!rc) return;
+    const [r,c]=rc; const o=owner[r][c];
+    if(o<0) return;
+    // must start on an endpoint OR on an existing part of that color's path
+    if(isEndpoint(r,c)){
+      // clear existing path of this color, start fresh from this endpoint
+      clearPath(o);
+      startEPs[o]=[r,c];
+      drawing={color:o, startEP:[r,c], cells:[]};
+      // the other endpoint is the target
+    } else if(pathContains(o,r,c)){
+      // continue: truncate path at this cell and keep drawing
+      const p=paths[o]; const idx=p.findIndex(([a,b])=>a===r&&b===c);
+      for(let i=idx+1;i<p.length;i++){const [a,b]=p[i]; owner[a][b]=-1;}
+      p.length=idx+1;
+      drawing={color:o, startEP:startEPs[o], cells:p.slice()};
+    } else return;
+    render();
+  }
+
+  function moveTo(x,y){
+    if(!drawing) return;
+    const rc=cellAt(x,y); if(!rc) return;
+    const [r,c]=rc; const color=drawing.color;
+    const cells=drawing.cells;
+    const head = cells.length? cells[cells.length-1] : drawing.startEP;
+    if(r===head[0]&&c===head[1]) return;
+    // adjacency
+    if(Math.abs(r-head[0])+Math.abs(c-head[1])!==1) return;
+    // backtrack?
+    if(cells.length>=1){
+      const prev = cells.length>=2? cells[cells.length-2] : drawing.startEP;
+      if(prev && prev[0]===r&&prev[1]===c){
+        const [pr,pc]=cells.pop(); owner[pr][pc]=-1; commitDraw(false); render(); return;
+      }
+    }
+    const o=owner[r][c];
+    // blocked: another color's endpoint
+    if(o>=0 && o!==color && isEndpoint(r,c)) return;
+    // reaching own other endpoint => complete link
+    if(o===color && isEndpoint(r,c)){
+      const other = endpoints[color].find(([a,b])=>!(a===drawing.startEP[0]&&b===drawing.startEP[1]));
+      if(other && other[0]===r&&other[1]===c){
+        cells.push([r,c]); // include endpoint as final path node? we treat path cells excluding endpoints normally
+        cells.pop(); // keep endpoints out of paths[]; connection detected by adjacency
+        drawing.reachedEnd=true;
+        commitDraw(false); render(); checkWin(); return;
+      }
+      return;
+    }
+    // own path cell already present -> ignore (no loops)
+    if(o===color) return;
+    // steal from another color (truncate theirs)
+    if(o>=0 && o!==color){
+      const p=paths[o]; const idx=p.findIndex(([a,b])=>a===r&&b===c);
+      if(idx>=0){ for(let i=idx;i<p.length;i++){const [a,b]=p[i]; owner[a][b]=-1;} p.length=idx; }
+    }
+    cells.push([r,c]); owner[r][c]=color; commitDraw(false);
+    render();
+  }
+  function commitDraw(counts){
+    paths[drawing.color]=drawing.cells.slice();
+    if(counts){moves++; updateHUD();}
+  }
+  function endDraw(){
+    if(!drawing) return;
+    moves++; // each gesture counts
+    paths[drawing.color]=drawing.cells.slice();
+    drawing=null; updateHUD(); render(); checkWin();
+  }
+  function clearPath(ci){ const p=paths[ci]; if(p){for(const [a,b] of p){owner[a][b]=-1;} } paths[ci]=[]; }
+
+  // completion check: path connects both endpoints AND board full
+  function isLinked(ci){
+    const p=paths[ci]||[]; const [A,B]=endpoints[ci];
+    if(p.length===0){ // maybe endpoints adjacent
+      return Math.abs(A[0]-B[0])+Math.abs(A[1]-B[1])===1;
+    }
+    const first=p[0], last=p[p.length-1];
+    const adj=(u,v)=>Math.abs(u[0]-v[0])+Math.abs(u[1]-v[1])===1;
+    const start=startEPs[ci]||A;
+    const end = (start[0]===A[0]&&start[1]===A[1])?B:A;
+    return adj(start,first) && adj(last,end);
+  }
+  function boardFull(){ for(let r=0;r<R;r++)for(let c=0;c<C;c++) if(owner[r][c]<0) return false; return true; }
+  function linkedCount(){ let n=0; for(let ci=0;ci<endpoints.length;ci++) if(isLinked(ci)) n++; return n; }
+
+  function checkWin(){
+    const linked=linkedCount();
+    if(linked===endpoints.length && boardFull()){
+      if(level>best){best=level; localStorage.setItem('lineas.best',best);}
+      el('winSub').textContent = `${moves} movimientos · tablero ${R}×${C}`;
+      el('win').classList.add('show');
+    }
+  }
+  function updateHUD(){
+    el('pipes').textContent = linkedCount()+'/'+endpoints.length;
+    el('moves').textContent = moves;
+  }
+
+  // ---------- pointer events ----------
+  let active=false;
+  cv.addEventListener('pointerdown',e=>{e.preventDefault();active=true;cv.setPointerCapture(e.pointerId);const [x,y]=pos(e);startAt(x,y);},{passive:false});
+  cv.addEventListener('pointermove',e=>{if(!active)return;e.preventDefault();const [x,y]=pos(e);moveTo(x,y);},{passive:false});
+  cv.addEventListener('pointerup',e=>{active=false;endDraw();},{passive:false});
+  cv.addEventListener('pointercancel',e=>{active=false;endDraw();});
+
+  // ---------- buttons ----------
+  el('undoBtn').onclick=()=>{ // clear the last-touched / any linked-least? clear the longest path
+    let target=-1,len=-1; paths.forEach((p,i)=>{if(p&&p.length>len){len=p.length;target=i;}});
+    if(target>=0){clearPath(target); moves++; updateHUD(); render();}
+  };
+  el('resetBtn').onclick=()=>{ for(let i=0;i<endpoints.length;i++) clearPath(i); startEPs=[]; moves=0; updateHUD(); render(); };
+  el('newBtn').onclick=()=>{ generate(); };
+  el('nextBtn').onclick=()=>{ level++; localStorage.setItem('lineas.level',level); generate(); };
+
+  startEPs=[];
+  generate();
+})();
+</script>
