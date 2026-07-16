@@ -302,6 +302,8 @@
 
   // ---- boot ----
   const offline = load();
+  // never let the player get stuck: give a starting Pizzería if they own nothing and can't buy
+  if(!st.some(s=>s.owned>0) && money < DEFS[0].cost){ st[0].owned = 1; save(); }
   refreshAll();
   if(offline && offline.earned>0){
     document.getElementById('offlineAmt').textContent='+'+fmt(offline.earned);
