@@ -1,0 +1,319 @@
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<meta name="theme-color" content="#0e1117">
+<title>Imperio · idle tycoon</title>
+<style>
+  :root{
+    --bg:#0e1117; --panel:#181f2e; --panel2:#1f2942; --ink:#eef2fb; --muted:#8d99b5;
+    --line:#28324a; --gold:#ffcf4d; --green:#3ddc84; --red:#ff6b6b; --accent:#5a97ff;
+  }
+  *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+  html,body{margin:0;height:100%}
+  body{
+    background:radial-gradient(1100px 600px at 50% -8%,#1a2338 0%,var(--bg) 60%);
+    color:var(--ink);font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+    display:flex;flex-direction:column;align-items:center;min-height:100%;
+    padding:max(8px,env(safe-area-inset-top)) 10px max(8px,env(safe-area-inset-bottom));
+  }
+  .app{width:100%;max-width:480px;display:flex;flex-direction:column;height:100%;gap:8px}
+  /* top bar */
+  .top{position:sticky;top:0;z-index:5;background:linear-gradient(180deg,var(--bg) 70%,transparent);
+    padding-bottom:6px;display:flex;flex-direction:column;gap:6px}
+  .money{display:flex;align-items:baseline;justify-content:center;gap:8px;padding:8px 4px 2px}
+  .money .amt{font-size:30px;font-weight:800;letter-spacing:.3px;color:var(--gold);text-shadow:0 2px 12px rgba(255,207,77,.25)}
+  .money .per{font-size:12.5px;color:var(--muted)}
+  .subbar{display:flex;gap:8px;justify-content:center}
+  .pill{background:var(--panel);border:1px solid var(--line);border-radius:11px;padding:5px 10px;font-size:12px;color:var(--muted)}
+  .pill b{color:var(--ink)}
+  .buyrow{display:flex;gap:6px;justify-content:center}
+  .buyrow button{background:var(--panel);border:1px solid var(--line);color:var(--muted);border-radius:11px;
+    padding:7px 0;font:inherit;font-weight:700;font-size:13px;flex:1;cursor:pointer}
+  .buyrow button.on{background:var(--accent);border-color:transparent;color:#fff}
+  /* list */
+  .list{flex:1;overflow-y:auto;display:flex;flex-direction:column;gap:9px;padding:2px 0 8px}
+  .list::-webkit-scrollbar{width:0}
+  .biz{background:var(--panel);border:1px solid var(--line);border-radius:16px;padding:9px;display:flex;gap:9px;align-items:center;position:relative;overflow:hidden}
+  .biz.locked{opacity:.55}
+  .icon{width:52px;height:52px;flex:none;border-radius:13px;background:var(--panel2);display:grid;place-items:center;font-size:27px;position:relative;cursor:pointer;user-select:none;transition:transform .05s}
+  .icon:active{transform:scale(.93)}
+  .icon .cnt{position:absolute;bottom:-4px;left:50%;transform:translateX(-50%);background:#0c1020;border:1px solid var(--line);
+    font-size:11px;font-weight:800;border-radius:8px;padding:0 6px;color:var(--gold)}
+  .mid{flex:1;min-width:0}
+  .nm{font-weight:700;font-size:14.5px;display:flex;align-items:center;gap:6px}
+  .nm .mgr{font-size:10px;background:rgba(61,220,132,.16);color:var(--green);border-radius:6px;padding:1px 5px;font-weight:700}
+  .bar{height:19px;background:#0c1020;border-radius:8px;margin-top:6px;position:relative;overflow:hidden;border:1px solid var(--line)}
+  .fill{position:absolute;inset:0;width:0;background:linear-gradient(90deg,#3d6ddc,#5a97ff);border-radius:8px;transition:width .08s linear}
+  .fill.done{background:linear-gradient(90deg,#2fa968,#3ddc84)}
+  .barlabel{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font-size:11.5px;font-weight:700;color:#fff;text-shadow:0 1px 2px rgba(0,0,0,.5)}
+  .buy{flex:none;width:104px;display:flex;flex-direction:column;gap:6px}
+  .buy button{font:inherit;border:none;border-radius:11px;padding:8px 4px;cursor:pointer;font-weight:800;line-height:1.15;text-align:center}
+  .buy .b1{background:linear-gradient(180deg,#5aa0ff,#3f7ef0);color:#fff}
+  .buy .b1 small{display:block;font-size:10px;font-weight:600;opacity:.9}
+  .buy .b1:disabled{background:#232c42;color:#5b678a;cursor:default}
+  .buy .b2{background:var(--panel2);color:var(--green);font-size:12px;border:1px solid var(--line)}
+  .buy .b2:disabled{color:#5b678a;cursor:default}
+  .buy .b2.done{color:var(--muted);font-size:11px}
+  .float{position:absolute;pointer-events:none;font-weight:800;color:var(--green);font-size:14px;animation:rise 1s ease-out forwards;z-index:9}
+  @keyframes rise{from{opacity:1;transform:translateY(0)}to{opacity:0;transform:translateY(-34px)}}
+  .toolbar{display:flex;gap:8px;padding-top:4px}
+  .toolbar button{flex:1;background:var(--panel);border:1px solid var(--line);color:var(--muted);border-radius:12px;padding:10px;font:inherit;font-weight:600;font-size:13px;cursor:pointer}
+  .welcome{position:fixed;inset:0;background:rgba(8,11,20,.78);backdrop-filter:blur(6px);display:none;align-items:center;justify-content:center;z-index:20;padding:24px}
+  .welcome.show{display:flex}
+  .card{background:var(--panel);border:1px solid var(--line);border-radius:20px;padding:24px;text-align:center;max-width:320px}
+  .card h2{margin:0 0 6px;font-size:22px}
+  .card .big{font-size:24px;font-weight:800;color:var(--gold);margin:10px 0}
+  .card p{color:var(--muted);font-size:13.5px;margin:6px 0}
+  .card button{margin-top:14px;background:linear-gradient(180deg,#5aa0ff,#3f7ef0);border:none;color:#fff;font:inherit;font-weight:800;font-size:15px;padding:12px 28px;border-radius:13px;cursor:pointer}
+</style>
+
+<div class="app">
+  <div class="top">
+    <div class="money"><span class="amt" id="money">$0</span><span class="per" id="perSec">$0/s</span></div>
+    <div class="subbar">
+      <div class="pill">Negocios <b id="ownedTot">0</b></div>
+      <div class="pill">Gestores <b id="mgrTot">0</b></div>
+      <div class="pill">Total ganado <b id="lifetime">$0</b></div>
+    </div>
+    <div class="buyrow">
+      <button data-amt="1" class="on">Comprar ×1</button>
+      <button data-amt="10">×10</button>
+      <button data-amt="100">×100</button>
+      <button data-amt="max">MÁX</button>
+    </div>
+  </div>
+  <div class="list" id="list"></div>
+  <div class="toolbar">
+    <button id="mgrHint">💡 Toca el icono para producir · compra gestores para automatizar</button>
+    <button id="resetBtn">Reiniciar</button>
+  </div>
+</div>
+
+<div class="welcome" id="welcome">
+  <div class="card">
+    <h2>👋 ¡Bienvenido de vuelta!</h2>
+    <p>Tus negocios produjeron mientras no estabas:</p>
+    <div class="big" id="offlineAmt">$0</div>
+    <p id="offlineTime"></p>
+    <button id="collectBtn">Recoger 🤑</button>
+  </div>
+</div>
+
+<script>
+(() => {
+  const fmt = n => {
+    if(n<1000) return '$'+((n>=10||Number.isInteger(n))?Math.floor(n):n.toFixed(2));
+    const s=['','K','M','B','T','Qa','Qi','Sx','Sp','Oc','No','Dc','Ud','Dd','Td'];
+    let i=Math.floor(Math.log10(n)/3); i=Math.min(i,s.length-1);
+    return '$'+(n/Math.pow(1000,i)).toFixed(2)+s[i];
+  };
+  const now = () => Date.now();
+
+  // theme matches the idle ads: pizzeria, sawmill, hunters...
+  const DEFS = [
+    {id:0, icon:'🍕', name:'Pizzería',    cost:4,           mult:1.07, rev:1,          time:1},
+    {id:1, icon:'🪵', name:'Aserradero',  cost:60,          mult:1.15, rev:60,         time:3},
+    {id:2, icon:'🏹', name:'Cazadores',   cost:720,         mult:1.14, rev:540,        time:6},
+    {id:3, icon:'🥖', name:'Panadería',   cost:8640,        mult:1.13, rev:4320,       time:12},
+    {id:4, icon:'🚜', name:'Granja',      cost:103680,      mult:1.12, rev:51840,      time:24},
+    {id:5, icon:'⛏️', name:'Mina',        cost:1244160,     mult:1.11, rev:622080,     time:48},
+    {id:6, icon:'🏭', name:'Fábrica',     cost:14929920,    mult:1.10, rev:7464960,    time:96},
+    {id:7, icon:'🛢️', name:'Petrolera',   cost:179159040,   mult:1.09, rev:89579520,   time:192},
+    {id:8, icon:'🏦', name:'Banco',       cost:2149908480,  mult:1.08, rev:1074954240, time:384},
+    {id:9, icon:'🚀', name:'Cohetes',     cost:25798901760, mult:1.07, rev:29668300000,time:768},
+  ];
+  DEFS.forEach(d=>{ d.mgrCost = d.cost*d.mult*50; }); // manager price ~ scaled
+
+  const SAVE='imperio.save.v1';
+  let money=0, lifetime=0, buyAmt=1;
+  const st = DEFS.map(()=>({owned:0, mgr:false, start:null}));
+
+  // ---- persistence ----
+  function save(){
+    localStorage.setItem(SAVE, JSON.stringify({
+      money, lifetime, t:now(),
+      st: st.map(s=>({o:s.owned, m:s.mgr, r:s.start? now()-s.start : null}))
+    }));
+  }
+  function load(){
+    const raw=localStorage.getItem(SAVE); if(!raw) return 0;
+    let d; try{ d=JSON.parse(raw); }catch(e){ return 0; }
+    money=d.money||0; lifetime=d.lifetime||0;
+    (d.st||[]).forEach((s,i)=>{ if(st[i]){ st[i].owned=s.o||0; st[i].mgr=!!s.m; } });
+    // offline earnings for managed businesses
+    const elapsed = Math.min((now()-(d.t||now()))/1000, 60*60*4); // cap 4h
+    let earned=0;
+    if(elapsed>1){
+      st.forEach((s,i)=>{
+        if(s.mgr && s.owned>0){
+          const t=cycleTime(i);
+          const cycles=Math.floor(elapsed/t);
+          earned += cycles * revenue(i);
+        }
+      });
+    }
+    money+=earned; lifetime+=earned;
+    return earned>0 ? {earned, elapsed} : 0;
+  }
+
+  // ---- economy ----
+  function milestones(o){ let m=0; for(const t of [25,50,100,150,200,300,400,500,750,1000]) if(o>=t) m++; return m; }
+  function profitMult(i){ return Math.pow(2, milestones(st[i].owned)); }
+  function cycleTime(i){
+    let t=DEFS[i].time, o=st[i].owned;
+    if(o>=100)t/=2; if(o>=250)t/=2; if(o>=500)t/=2;
+    return Math.max(t, 0.05);
+  }
+  function revenue(i){ return DEFS[i].rev * st[i].owned * profitMult(i); }
+  function bulkCost(i, n){
+    const d=DEFS[i], k=st[i].owned;
+    return d.cost*Math.pow(d.mult,k)*(Math.pow(d.mult,n)-1)/(d.mult-1);
+  }
+  function maxAffordable(i){
+    const d=DEFS[i], k=st[i].owned;
+    const val = money*(d.mult-1)/(d.cost*Math.pow(d.mult,k)) + 1;
+    if(val<=1) return 0;
+    return Math.max(0, Math.floor(Math.log(val)/Math.log(d.mult)));
+  }
+  function wantN(i){ return buyAmt==='max' ? Math.max(1,maxAffordable(i)) : buyAmt; }
+
+  // ---- build DOM ----
+  const listEl=document.getElementById('list');
+  const rows = DEFS.map((d,i)=>{
+    const row=document.createElement('div'); row.className='biz'+(st[i].owned?'':' locked');
+    row.innerHTML=`
+      <div class="icon" data-i="${i}">${d.icon}<span class="cnt" style="display:none"></span></div>
+      <div class="mid">
+        <div class="nm">${d.name}<span class="mgr" style="display:none">AUTO</span></div>
+        <div class="bar"><div class="fill"></div><div class="barlabel"></div></div>
+      </div>
+      <div class="buy">
+        <button class="b1"></button>
+        <button class="b2"></button>
+      </div>`;
+    listEl.appendChild(row);
+    return {
+      row, icon:row.querySelector('.icon'), cnt:row.querySelector('.cnt'),
+      mgrTag:row.querySelector('.mgr'), fill:row.querySelector('.fill'),
+      label:row.querySelector('.barlabel'), b1:row.querySelector('.b1'), b2:row.querySelector('.b2')
+    };
+  });
+
+  // start a production cycle (manual or auto)
+  function runCycle(i){ if(st[i].owned>0 && st[i].start===null){ st[i].start=now(); } }
+
+  function buy(i){
+    const n=wantN(i); if(n<1) return;
+    const c=bulkCost(i,n); if(money<c) return;
+    money-=c; st[i].owned+=n;
+    rows[i].row.classList.remove('locked');
+    refreshRow(i); save();
+  }
+  function buyMgr(i){
+    if(st[i].mgr) return; const c=DEFS[i].mgrCost;
+    if(money<c) return; money-=c; st[i].mgr=true; runCycle(i); refreshRow(i); save();
+  }
+
+  // events
+  rows.forEach((r,i)=>{
+    r.icon.addEventListener('click',()=>runCycle(i));
+    r.b1.addEventListener('click',()=>buy(i));
+    r.b2.addEventListener('click',()=>buyMgr(i));
+  });
+  document.querySelectorAll('.buyrow button').forEach(b=>{
+    b.addEventListener('click',()=>{
+      document.querySelectorAll('.buyrow button').forEach(x=>x.classList.remove('on'));
+      b.classList.add('on');
+      buyAmt = b.dataset.amt==='max' ? 'max' : +b.dataset.amt;
+      refreshAll();
+    });
+  });
+  document.getElementById('resetBtn').addEventListener('click',()=>{
+    if(confirm('¿Reiniciar todo el progreso?')){ localStorage.removeItem(SAVE); location.reload(); }
+  });
+
+  function floatText(i,txt){
+    const f=document.createElement('div'); f.className='float'; f.textContent=txt;
+    const rect=rows[i].icon.getBoundingClientRect();
+    f.style.left=(rect.left+rect.width/2-14)+'px'; f.style.top=(rect.top-4)+'px';
+    document.body.appendChild(f); setTimeout(()=>f.remove(),1000);
+  }
+
+  // ---- per-row UI refresh ----
+  function refreshRow(i){
+    const s=st[i], r=rows[i], d=DEFS[i];
+    r.cnt.style.display = s.owned? 'block':'none';
+    r.cnt.textContent = s.owned;
+    r.mgrTag.style.display = s.mgr? 'inline-block':'none';
+    // buy button
+    const n=wantN(i), c=bulkCost(i,n);
+    if(s.owned===0 && buyAmt!=='max'){
+      r.b1.innerHTML = `Comprar<small>${fmt(bulkCost(i,1))}</small>`;
+    } else {
+      r.b1.innerHTML = `Comprar ×${n}<small>${fmt(c)}</small>`;
+    }
+    r.b1.disabled = money < c || n<1;
+    // manager button
+    if(s.mgr){ r.b2.className='b2 done'; r.b2.textContent='✔ Gestor'; r.b2.disabled=true; }
+    else { r.b2.className='b2'; r.b2.innerHTML=`Gestor<br>${fmt(d.mgrCost)}`; r.b2.disabled=money<d.mgrCost; }
+  }
+  function refreshAll(){ for(let i=0;i<DEFS.length;i++) refreshRow(i); }
+
+  // ---- main loop ----
+  let acc=0, lastSave=now();
+  function tick(){
+    const t=now();
+    let perSec=0, ownedTot=0, mgrTot=0;
+    for(let i=0;i<DEFS.length;i++){
+      const s=st[i]; ownedTot+=s.owned; if(s.mgr&&s.owned>0)mgrTot++;
+      // auto-run managers
+      if(s.mgr && s.owned>0 && s.start===null) s.start=t;
+      const dur=cycleTime(i)*1000;
+      if(s.owned>0 && s.mgr) perSec += revenue(i)/cycleTime(i);
+      const r=rows[i];
+      if(s.start!==null){
+        let el=t-s.start;
+        if(el>=dur){
+          // complete as many cycles as elapsed covers (handles lag)
+          let cycles=Math.floor(el/dur);
+          const gain=cycles*revenue(i);
+          money+=gain; lifetime+=gain;
+          if(cycles>0 && i>=0) floatText(i,'+'+fmt(gain));
+          if(s.mgr){ s.start = t - (el - cycles*dur); }
+          else s.start=null;
+          el = s.start!==null ? t-s.start : 0;
+        }
+        const p = s.start!==null ? Math.min(el/dur,1) : 0;
+        r.fill.style.width=(p*100)+'%';
+        r.fill.classList.toggle('done', s.mgr);
+        r.label.textContent = s.start!==null ? (Math.max(0,(dur-el)/1000)).toFixed(1)+'s' : '';
+      } else {
+        r.fill.style.width='0%'; r.label.textContent = s.owned>0? 'Toca para producir':'';
+      }
+    }
+    document.getElementById('money').textContent=fmt(money);
+    document.getElementById('perSec').textContent=fmt(perSec)+'/s';
+    document.getElementById('ownedTot').textContent=ownedTot;
+    document.getElementById('mgrTot').textContent=mgrTot;
+    document.getElementById('lifetime').textContent=fmt(lifetime);
+    refreshAll();
+    if(t-lastSave>4000){ save(); lastSave=t; }
+    requestAnimationFrame(tick);
+  }
+
+  // ---- boot ----
+  const offline = load();
+  refreshAll();
+  if(offline && offline.earned>0){
+    document.getElementById('offlineAmt').textContent='+'+fmt(offline.earned);
+    const mins=Math.floor(offline.elapsed/60);
+    document.getElementById('offlineTime').textContent = mins>60? `en ${Math.floor(mins/60)}h ${mins%60}m (máx 4h)` : `en ${mins} min`;
+    document.getElementById('welcome').classList.add('show');
+  }
+  document.getElementById('collectBtn').addEventListener('click',()=>{
+    document.getElementById('welcome').classList.remove('show');
+  });
+  window.addEventListener('beforeunload', save);
+  document.addEventListener('visibilitychange',()=>{ if(document.hidden) save(); });
+  requestAnimationFrame(tick);
+})();
+</script>
