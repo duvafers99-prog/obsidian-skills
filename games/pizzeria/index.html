@@ -52,6 +52,12 @@
   /* moving things */
   .pz{position:absolute;z-index:5;font-size:22px;pointer-events:none;will-change:transform;filter:drop-shadow(0 3px 2px rgba(0,0,0,.3))}
   .cust{position:absolute;z-index:4;font-size:34px;line-height:1;pointer-events:none;will-change:transform,left;filter:drop-shadow(0 5px 3px rgba(0,0,0,.35))}
+  .cust .f{display:block}
+  .patbar{position:absolute;left:50%;top:-11px;transform:translateX(-50%);width:36px;height:6px;background:#000a;border:1px solid #0007;border-radius:4px;overflow:hidden;opacity:0}
+  .patbar i{display:block;height:100%;width:100%;background:#5fe08a;border-radius:4px}
+  .combo{position:absolute;top:8px;right:10px;z-index:6;font-weight:900;font-size:13px;color:#ffcf4d;background:#0007;border:1px solid #ffcf4d55;border-radius:9px;padding:3px 8px;opacity:0;transition:opacity .2s;text-shadow:0 1px 2px #000}
+  .combo.show{opacity:1;animation:combopop .25s ease}
+  @keyframes combopop{from{transform:scale(1.25)}to{transform:scale(1)}}
   .scooter{position:absolute;z-index:5;font-size:30px;line-height:1;pointer-events:none;will-change:transform;filter:drop-shadow(0 4px 2px rgba(0,0,0,.35))}
   .scooter .box{position:absolute;top:-8px;left:2px;font-size:13px}
   .house{position:absolute;right:2%;top:66%;font-size:38px;z-index:3;filter:drop-shadow(0 5px 3px rgba(0,0,0,.35))}
@@ -93,6 +99,7 @@
   <div class="scene" id="scene">
     <div class="bunting"></div>
     <div class="sign">🍕 PIZZERÍA<small id="signName">DON TOÑO</small></div>
+    <div class="combo" id="combo"></div>
     <div class="menu">MENÚ<br>🍕 Margarita<br>🍕 Pepperoni<br>🍕 Especial</div>
     <div class="window"><span></span></div>
     <div class="roadline"></div>
@@ -209,36 +216,60 @@
     c.style.left=(x-6)+'px'; c.style.top=(y-6)+'px'; scene.appendChild(c);
     c.animate([{transform:'translateY(0)',opacity:1},{transform:'translateY(-38px)',opacity:0}],{duration:850,easing:'ease-out'}).onfinish=()=>c.remove();
   }
-  function serveCounter(val){ coinPop(counterX+W*0.02, beltY, val); }
+  function serveCounter(val){
+    if(queue.length && queue[0].active) serveFront();          // serve the waiting customer (tip+combo)
+    else coinPop(counterX+W*0.02, beltY, val);                 // walk-in sale, nobody waiting
+  }
 
-  // ---- customers (queue that arrives & leaves) ----
+  // ---- customers: arrive, wait (patience!), served in time = tip+combo, too slow = angry ----
   const FACES=['🧑','👩','👨','🧓','👦','🧔','👩‍🦰','🧑‍🦱','👱','🧕'];
   let queue=[]; const MAXQ=4; let faceIdx=0;
+  let combo=1;
+  const PATIENCE=6;                                  // seconds the front customer will wait
   function slotX(i){ return counterX + W*0.085 + i*(W*0.072); }
+  function makeCust(){
+    const el=document.createElement('div'); el.className='cust';
+    const face=FACES[(faceIdx++)%FACES.length];
+    el.innerHTML=`<span class="f">${face}</span><span class="patbar"><i></i></span>`;
+    el.style.top=custY+'px'; el.style.left=(W*1.05)+'px';
+    return {el, faceEl:el.querySelector('.f'), bar:el.querySelector('.patbar'), fill:el.querySelector('.patbar i'), active:false, patience:PATIENCE, done:false};
+  }
   function layoutQueue(newest){
-    queue.forEach((el,i)=>{
+    queue.forEach((c,i)=>{
       const to=slotX(i);
-      if(el===newest){ el.style.left=(W*1.05)+'px'; el.animate([{left:(W*1.05)+'px'},{left:to+'px'}],{duration:850,easing:'ease-out',fill:'forwards'}); el.style.left=to+'px'; }
-      else { el.animate([{left:el.style.left||to+'px'},{left:to+'px'}],{duration:400,easing:'ease-out',fill:'forwards'}); el.style.left=to+'px'; }
+      if(c===newest) c.el.animate([{left:(W*1.05)+'px'},{left:to+'px'}],{duration:850,easing:'ease-out',fill:'forwards'});
+      else c.el.animate([{left:c.el.style.left||to+'px'},{left:to+'px'}],{duration:400,easing:'ease-out',fill:'forwards'});
+      c.el.style.left=to+'px';
     });
   }
   function spawnCustomer(){
     if(queue.length>=MAXQ) return;
-    const el=document.createElement('div'); el.className='cust';
-    el.textContent=FACES[(faceIdx++)%FACES.length];
-    el.style.top=custY+'px'; el.style.left=(W*1.05)+'px'; scene.appendChild(el);
-    queue.push(el); layoutQueue(el);
+    const c=makeCust(); scene.appendChild(c.el); queue.push(c); layoutQueue(c);
   }
-  function serveFront(){
-    const el=queue.shift(); if(!el) return;
-    el.textContent='😋'; coinPop(slotX(0), custY, pizzaValue());
-    el.animate([
-      {transform:'translateY(0) scale(1)',opacity:1},
-      {transform:'translateY(-10px) scale(1.15)',opacity:1,offset:.4},
-      {transform:'translateY(-46px) scale(.8)',opacity:0}
-    ],{duration:650,easing:'ease-in'}).onfinish=()=>el.remove();
-    layoutQueue();
+  function leaveCust(c,happy){
+    c.done=true; c.bar.style.opacity='0'; c.faceEl.textContent = happy?'😋':'😠';
+    const anim = happy
+      ? [{transform:'translateY(0) scale(1)',opacity:1},{transform:'translateY(-12px) scale(1.15)',opacity:1,offset:.4},{transform:'translateY(-48px) scale(.8)',opacity:0}]
+      : [{transform:'translateX(0) rotate(0)',opacity:1},{transform:'translateX(-5px) rotate(-9deg)',offset:.2},{transform:'translateX(5px) rotate(9deg)',offset:.45},{transform:'translateX(0) rotate(0)',offset:.65},{transform:'translateY(-26px)',opacity:0}];
+    c.el.animate(anim,{duration:happy?650:850,easing:'ease-in'}).onfinish=()=>c.el.remove();
   }
+  function serveFront(){                              // a pizza reached a waiting customer
+    const c=queue.shift(); if(!c) return false;
+    const tip=Math.ceil(pizzaValue()*0.5*combo);       // tip on top of the base sale, scales with combo
+    money+=tip; lifetime+=tip;
+    coinPop(slotX(0), custY-6, tip);
+    combo=Math.min(combo+1,99); updateCombo();
+    leaveCust(c,true); layoutQueue(); return true;
+  }
+  function angryFront(){                              // patience ran out
+    const c=queue.shift(); if(!c) return;
+    combo=1; updateCombo();
+    const f=document.createElement('div'); f.className='coin'; f.style.color='#ff6b6b'; f.textContent='😠 −propina';
+    f.style.left=(slotX(0)-14)+'px'; f.style.top=(custY-6)+'px'; scene.appendChild(f);
+    f.animate([{transform:'translateY(0)',opacity:1},{transform:'translateY(-30px)',opacity:0}],{duration:850}).onfinish=()=>f.remove();
+    leaveCust(c,false); layoutQueue();
+  }
+  function updateCombo(){ const e=$('combo'); if(combo>1){ e.textContent='🔥 x'+combo+' propina'; e.classList.add('show'); } else e.classList.remove('show'); }
 
   // ---- delivery scooters ----
   let scEls=[]; const MAX_SC_DOM=5;
@@ -307,18 +338,27 @@
   }
 
   // ---- loop ----
-  let last=now(), visualAcc=0, workTimer=0, spawnTimer=0, serveTimer=0;
+  let last=now(), visualAcc=0, workTimer=0, spawnTimer=0;
   function tick(){
     const t=now(), dt=Math.min((t-last)/1000,.25); last=t;
     const inc=autoIncomePerSec();
     if(inc>0){ money+=inc*dt; lifetime+=inc*dt; }
-    // visual counter pizzas from the gestor
+    // visual counter pizzas from the gestor (each arrival serves the waiting customer)
     const cr=counterRate();
     if(cr>0){ visualAcc+=Math.min(cr,6)*dt; let g=0; const pv=pizzaValue(); while(visualAcc>=1&&g++<6){ spawnPizza(pv); visualAcc--; } workTimer=t; }
     if(t-workTimer>500) chefsEl.classList.remove('working');
-    // ambient customer flow: arrive ~1/s, leave ~every 1.3s → always a visible little queue
+    // customers keep arriving
     if(t-spawnTimer>1000){ spawnCustomer(); spawnTimer=t; }
-    if(t-serveTimer>1300){ serveFront(); serveTimer=t; }
+    // front customer's patience drains — serve in time or they get angry
+    const front=queue[0];
+    if(front){
+      if(!front.active){ front.active=true; front.patience=PATIENCE; front.bar.style.opacity='1'; }
+      front.patience-=dt;
+      const p=Math.max(0,front.patience/PATIENCE);
+      front.fill.style.width=(p*100)+'%';
+      front.fill.style.background = p>0.5?'#5fe08a':(p>0.22?'#ffd23f':'#ff6b6b');
+      if(front.patience<=0) angryFront();
+    }
     $('money').textContent=fmt(money);
     if(t-(tick._s||0)>500){ refresh(); tick._s=t; }
     requestAnimationFrame(tick);
