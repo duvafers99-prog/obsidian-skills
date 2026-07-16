@@ -1,0 +1,1 @@
+Pon aquí tus modelos de personajes (.glb / .gltf). Ver README.md
